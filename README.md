@@ -8,17 +8,10 @@ Core operating principle: look at the derivative, not the level. Find structural
 
 ## What I build
 
-**Digital Immortality** — a system that formalizes how I think, decide, and operate into executable AI agents. Not a chatbot. A behavioral twin that runs recursively, self-calibrates, and evolves. The unifying project across everything below.
-
-### Active projects
-
-| Project | Domain | What it does |
-|---------|--------|-------------|
-| [digital-immortality](https://github.com/l12203685/digital-immortality) | Recursive engine / Platform | Skill suite for Claude Code — DNA calibration, boot tests, organism framework |
-| [backtest-framework](https://github.com/l12203685/backtest-framework) | Trading | Multi-market quantitative backtest with walk-forward validation and live pipeline |
-| [zeroth-principles](https://github.com/l12203685/zeroth-principles) | Knowledge output | Public methodology — recursive thinking, decision frameworks, first-principles systems |
-| [avalonpediatw](https://github.com/l12203685/avalonpediatw) | Knowledge output | Avalon game encyclopedia — Bayesian strategy, five axioms, deduction framework |
-| [badminton-scorer](https://github.com/l12203685/badminton-scorer) | Life maintenance | Badminton match scorer PWA |
+| Project | What it does |
+|---------|-------------|
+| [avalonpediatw](https://github.com/l12203685/avalonpediatw) | Avalon game encyclopedia — Bayesian strategy, five axioms, deduction framework |
+| [digital-immortal-tree-skill](https://github.com/l12203685/digital-immortal-tree-skill) | Digital immortal tree skeleton — fork to build your own organism tree |
 
 ---
 
