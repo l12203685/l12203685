@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="zh-TW" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coast FIRE 動態模型分析</title>
+<meta name="description" content="Coast FIRE 與完全退休試算：分離投資、現金、負債三種成長率，可選擇是否納入隨機因素（蒙地卡羅存活率）。單檔、無外部相依、資料不離開瀏覽器。">
+<style>
+:root{
+  color-scheme: light;
+  --surface-1:#fcfcfb; --page:#f9f9f7; --panel:#ffffff; --bar:#12212f;
+  --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781; --muted-t:#6e6c67;
+  --grid:#e1e0d9; --axis:#c3c2b7; --line:rgba(11,11,11,.10);
+  --s1:#2a78d6; --s1-band:#9ec5f4; --s1-band2:#cde2fb;
+  --s2:#eb6834; --s3:#1baf7a;
+  --s1-ink:#2569ba; --s2-ink:#b8410f; --s3-ink:#0f7050;
+  --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+  --field:#ffffff; --field-bd:#d6d5ce;
+  --shadow:0 1px 2px rgba(11,11,11,.05);
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --surface-1:#1a1a19; --page:#0d0d0d; --panel:#161615; --bar:#0a0a0a;
+  --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781; --muted-t:#898781;
+  --grid:#2c2c2a; --axis:#383835; --line:rgba(255,255,255,.10);
+  --s1:#3987e5; --s1-band:#184f95; --s1-band2:#0d366b;
+  --s2:#d95926; --s3:#199e70;
+  --s1-ink:#438de6; --s2-ink:#d95926; --s3-ink:#199e70;
+  --good:#0ca30c; --warn:#fab219; --crit:#d03b3b;
+  --field:#1f1f1e; --field-bd:#3a3a37;
+  --shadow:0 1px 2px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--page);color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI","Noto Sans TC",sans-serif;
+  font-size:clamp(13px,.28vw + 12.2px,15px);line-height:1.5;
+  display:flex;flex-direction:column}
+
+/* ---------- 標頭：置中標題 + badge ---------- */
+header{background:var(--bar);color:#fff;flex-shrink:0;
+  padding:clamp(9px,.9vw,15px) clamp(12px,1.4vw,24px);
+  display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+  gap:clamp(8px,1vw,16px);border-bottom:1px solid var(--line)}
+.hd-mid{grid-column:2;display:flex;align-items:center;justify-content:center;
+  gap:10px;flex-wrap:wrap;text-align:center}
+header h1{font-size:clamp(15px,.85vw + 10px,23px);font-weight:700;margin:0;letter-spacing:.01em;color:#fff}
+.badge{background:var(--s1);color:#fff;font-size:clamp(10px,.2vw + 9px,12px);font-weight:700;
+  padding:2px 9px;border-radius:999px;white-space:nowrap}
+.hd-r{grid-column:3;display:flex;justify-content:flex-end;align-items:center;
+  gap:clamp(5px,.5vw,9px);flex-wrap:wrap}
+button{font:inherit;font-size:clamp(11px,.18vw + 10.4px,13px);padding:5px 11px;
+  border:1px solid rgba(255,255,255,.24);background:rgba(255,255,255,.07);color:#fff;
+  border-radius:6px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:rgba(255,255,255,.5)}
+button[aria-pressed="true"]{background:var(--s1);border-color:var(--s1)}
+.sw-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;
+  background:rgba(255,255,255,.35);vertical-align:middle}
+button[aria-pressed="true"] .sw-dot{background:#fff}
+
+/* ---------- 三欄骨架：連續縮放，欄寬用 clamp ---------- */
+main{flex:1;min-height:0;display:grid;
+  grid-template-columns:clamp(232px,19vw,318px) minmax(0,1fr) clamp(300px,27.5vw,438px);
+  grid-template-areas:"l c r"}
+.col{overflow-y:auto;min-width:0;padding:clamp(11px,1.1vw,20px) clamp(12px,1.1vw,20px)}
+.col-l{grid-area:l;background:var(--panel);border-right:1px solid var(--line)}
+.col-c{grid-area:c;background:var(--surface-1);display:flex;flex-direction:column;
+  gap:clamp(9px,.9vw,16px)}
+.col-r{grid-area:r;background:var(--panel);border-left:1px solid var(--line);
+  display:flex;flex-direction:column}
+@media(max-width:1499px){
+  main{grid-template-columns:clamp(228px,26vw,300px) minmax(0,1fr);
+    grid-template-areas:"l c" "r r"}
+  .col-r{border-left:none;border-top:1px solid var(--line);max-height:none}
+  .tbl-wrap{max-height:60vh}
+}
+@media(max-width:860px){
+  html,body{height:auto}
+  main{grid-template-columns:minmax(0,1fr);grid-template-areas:"c" "l" "r"}
+  .col{overflow:visible}
+  .col-l{border-right:none;border-top:1px solid var(--line)}
+}
+
+/* ---------- 左欄表單 ---------- */
+h2,.sec{font-size:clamp(13px,.22vw + 12.2px,16px);font-weight:700;color:var(--ink);
+  margin:clamp(14px,1.4vw,24px) 0 clamp(7px,.7vw,12px);
+  padding-bottom:4px;border-bottom:2px solid var(--grid)}
+h2:first-child,.sec:first-child{margin-top:0}
+.f{margin-bottom:clamp(8px,.8vw,14px)}
+.f label{display:block;font-size:clamp(11.5px,.2vw + 11px,13.5px);font-weight:600;
+  color:var(--ink-2);margin-bottom:3px}
+.f .hint{font-size:clamp(10.5px,.16vw + 10px,12px);color:var(--muted-t);margin:2px 0 3px;font-weight:400}
+input[type=number],select{width:100%;padding:6px 8px;border:1px solid var(--field-bd);
+  border-radius:6px;background:var(--field);color:var(--ink);font:inherit;
+  font-size:clamp(12.5px,.2vw + 12px,14.5px);font-variant-numeric:tabular-nums;outline:none}
+input:focus,select:focus{border-color:var(--s1);
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--s1) 22%,transparent)}
+.f-post label{color:var(--s1)}
+.f-post input{background:color-mix(in srgb,var(--s1) 9%,var(--field))}
+.f-add{border-top:1px solid var(--field-bd);padding-top:clamp(9px,.9vw,15px);margin-top:clamp(9px,.9vw,15px)}
+.f-add label{color:var(--s3-ink)}
+.f-add input{background:color-mix(in srgb,var(--s3) 11%,var(--field))}
+details.adv{margin-top:clamp(14px,1.4vw,24px);border-top:2px solid var(--grid);padding-top:8px}
+details.adv>summary{cursor:pointer;list-style:none;font-size:clamp(13px,.22vw + 12.2px,16px);
+  font-weight:700;color:var(--ink);display:flex;align-items:center;gap:6px}
+details.adv>summary::-webkit-details-marker{display:none}
+details.adv>summary::before{content:"▸";color:var(--muted-t);font-size:11px;transition:transform .15s}
+details.adv[open]>summary::before{transform:rotate(90deg)}
+details.adv>div{padding-top:clamp(8px,.8vw,13px)}
+#mcBox{display:none}
+#mcBox.on{display:block}
+
+/* ---------- 中欄卡片 ---------- */
+.cards{display:grid;gap:clamp(8px,.8vw,14px);
+  grid-template-columns:repeat(auto-fit,minmax(clamp(150px,13vw,205px),1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:clamp(9px,.85vw,15px) clamp(10px,.95vw,16px);box-shadow:var(--shadow);min-width:0}
+.card .k{font-size:clamp(10.5px,.16vw + 10px,12px);font-weight:600;color:var(--muted-t);
+  letter-spacing:.05em}
+.card .v{font-size:clamp(17px,1.05vw + 9px,27px);font-weight:700;margin-top:3px;
+  font-variant-numeric:tabular-nums;line-height:1.15;overflow-wrap:anywhere}
+.card .n{font-size:clamp(10.5px,.16vw + 10px,12px);color:var(--muted-t);margin-top:3px;line-height:1.45}
+.card.blue{background:color-mix(in srgb,var(--s1) 9%,var(--panel));
+  border-color:color-mix(in srgb,var(--s1) 30%,var(--line))}
+.card.blue .k{color:var(--s1-ink)}
+.card.blue .v{color:var(--s1-ink)}
+.card.coast{background:color-mix(in srgb,var(--s3) 9%,var(--panel));
+  border-color:color-mix(in srgb,var(--s3) 30%,var(--line))}
+.card.coast .k{color:var(--s3-ink)}
+.card.coast .v{color:var(--s3-ink)}
+
+.coast-card{background:color-mix(in srgb,var(--s3) 9%,var(--panel));
+  border:1px solid color-mix(in srgb,var(--s3) 30%,var(--line));border-radius:9px;
+  padding:clamp(10px,1vw,17px) clamp(11px,1.05vw,18px);box-shadow:var(--shadow)}
+.coast-head{display:flex;justify-content:space-between;align-items:flex-end;
+  gap:12px;margin-bottom:clamp(7px,.7vw,11px);flex-wrap:wrap}
+.coast-head .k{font-size:clamp(10.5px,.16vw + 10px,12px);font-weight:600;color:var(--s3-ink);letter-spacing:.05em}
+.coast-head .n{font-size:clamp(10.5px,.16vw + 10px,12px);color:var(--muted-t);margin-top:3px}
+.coast-head .v{font-size:clamp(21px,1.5vw + 12px,36px);font-weight:700;line-height:1;
+  color:var(--s3-ink);font-variant-numeric:tabular-nums;margin-left:auto}
+.track{height:clamp(9px,.7vw,13px);border-radius:999px;background:var(--field);
+  border:1px solid color-mix(in srgb,var(--s3) 26%,var(--line));overflow:hidden}
+.fill{height:100%;border-radius:999px;background:var(--s3);transition:width .3s}
+
+.chart-box{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:clamp(8px,.8vw,14px) clamp(9px,.9vw,15px) 5px;position:relative;
+  flex:1;min-height:clamp(300px,34vh,440px);display:flex;flex-direction:column;box-shadow:var(--shadow)}
+#cv{width:100%;flex:1;min-height:250px;display:block}
+.legend{display:flex;gap:clamp(9px,.9vw,17px);flex-wrap:wrap;
+  font-size:clamp(10.5px,.16vw + 10px,12px);color:var(--ink-2);
+  padding-top:7px;margin-top:5px;border-top:1px solid var(--grid)}
+.legend i{display:inline-block;width:12px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.legend i.dash{height:0;border-top:2px dashed var(--muted);border-radius:0;background:none!important}
+.legend .sw{display:inline-block;width:12px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+#tip{position:absolute;pointer-events:none;opacity:0;transition:opacity .1s;
+  background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 9px;
+  font-size:clamp(10.5px,.16vw + 10.2px,12.5px);font-variant-numeric:tabular-nums;
+  box-shadow:0 4px 14px rgba(0,0,0,.22);white-space:nowrap;z-index:5;color:var(--ink)}
+#tip b{font-weight:700}
+#tip .r{display:flex;justify-content:space-between;gap:14px}
+#tip .r i{display:inline-block;width:9px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+
+/* ---------- 右欄表格 ---------- */
+.tbl-wrap{flex:1;min-height:0;overflow:auto;border:1px solid var(--line);
+  border-radius:9px;box-shadow:var(--shadow)}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{position:sticky;top:0;background:var(--panel);z-index:2;
+  font-size:clamp(10.5px,.16vw + 10px,12px);font-weight:600;color:var(--muted-t);
+  text-align:right;padding:6px 4px;border-bottom:2px solid var(--axis);
+  white-space:normal;overflow-wrap:anywhere;line-height:1.25}
+td{padding:5px 4px;text-align:right;font-size:clamp(11px,.18vw + 10.5px,12.8px);
+  white-space:nowrap;border-bottom:1px solid var(--grid);color:var(--ink-2)}
+th:first-child,td:first-child{text-align:center}
+th:last-child,td:last-child{text-align:center}
+td.nw{font-weight:600;color:var(--ink)}
+tbody tr:hover td{background:color-mix(in srgb,var(--ink) 4%,transparent)}
+tr.coast td{background:color-mix(in srgb,var(--s3) 10%,transparent)}
+tr.fire td{background:color-mix(in srgb,var(--s1) 12%,transparent)}
+tr.now td{background:color-mix(in srgb,var(--warn) 15%,transparent);font-weight:600}
+.tag{font-size:clamp(10px,.15vw + 9.6px,11.5px);font-weight:600;white-space:nowrap}
+
+/* ---------- 說明與警示 ---------- */
+.note{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:clamp(9px,.9vw,15px) clamp(10px,1vw,16px);
+  font-size:clamp(11.5px,.18vw + 11px,13px);color:var(--ink-2);line-height:1.7;box-shadow:var(--shadow)}
+.note b{color:var(--ink)}
+.note p{margin:0 0 8px}
+.note p:last-child{margin-bottom:0}
+.flag{border-left:3px solid var(--crit);padding-left:9px;margin:8px 0;color:var(--ink)}
+.flag:first-child{margin-top:0}
+.flag:last-child{margin-bottom:0}
+.flag.ok{border-color:var(--good)}
+.flag.warn{border-color:var(--warn)}
+.flag.info{border-color:var(--s1)}
+footer{padding:8px clamp(12px,1.4vw,24px);font-size:clamp(10.5px,.16vw + 10px,12px);
+  color:var(--muted-t);border-top:1px solid var(--line);background:var(--panel);flex-shrink:0}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hd-mid">
+    <h1>Coast FIRE 動態模型分析</h1>
+    <span class="badge">公開發布版</span>
+  </div>
+  <div class="hd-r">
+    <button id="bRand" aria-pressed="false"><span class="sw-dot"></span>隨機因素</button>
+    <button id="bSeed" hidden>重抽亂數</button>
+    <button id="bReset">還原預設</button>
+    <button id="bTheme">淺色</button>
+  </div>
+</header>
+
+<main>
+  <!-- 左：參數 -->
+  <div class="col col-l">
+    <h2>時間與資產設定</h2>
+    <div class="f"><label>目標完全退休年限（年後）</label>
+      <div class="hint">計算當下 Coast 門檻的折現基準</div>
+      <input type="number" id="pBase" value="5" step="1" min="0"></div>
+    <div class="f"><label>目前投資本金（元）</label><input type="number" id="pInv" value="7000000" step="100000"></div>
+    <div class="f"><label>目前保留現金（元）</label><input type="number" id="pCash" value="1000000" step="50000"></div>
+    <div class="f"><label>目前信貸／負債總額（元）</label><input type="number" id="pDebt" value="3850000" step="50000" min="0"></div>
+    <div class="f"><label>負債年利率（%，名目）</label>
+      <input type="number" id="pRd" value="3.3" step="0.1"></div>
+    <div class="f"><label>負債償還年限（年）</label>
+      <div class="hint">等額本息攤還。填 0 表示不還款，餘額會用利率滾</div>
+      <input type="number" id="pTerm" value="10" step="1" min="0"></div>
+
+    <h2>FIRE 參數設定</h2>
+    <div class="f"><label>目標設定方式</label>
+      <select id="pMode">
+        <option value="exp" selected>由退休後開銷推導目標</option>
+        <option value="tgt">直接指定淨資產目標</option>
+      </select></div>
+    <div class="f" id="fTgt" hidden><label>淨資產目標（元）</label>
+      <div class="hint">例：1 億 × 年化 5% ＝ 年被動收入 500 萬</div>
+      <input type="number" id="pTarget" value="100000000" step="1000000" min="0"></div>
+    <div class="f" id="fExp"><label>預期退休後「月」開銷（元，今日幣值）</label>
+      <input type="number" id="pExp" value="50000" step="1000" min="0"></div>
+    <div class="f"><label>安全提領率 SWR（%）</label><input type="number" id="pSwr" value="5" step="0.1"></div>
+    <div class="f"><label>【退休前】名目年化報酬（%）</label><input type="number" id="pRpre" value="10" step="0.1"></div>
+    <div class="f f-post"><label>【退休後】名目年化報酬（%）</label><input type="number" id="pRpost" value="8" step="0.1"></div>
+    <div class="f"><label>通膨率（%）</label>
+      <div class="hint">報酬與利率一律填名目，模型內部換算成實質：(1+名目)÷(1+通膨)−1</div>
+      <input type="number" id="pInf" value="3" step="0.1"></div>
+    <div class="f f-add"><label>每月「額外」投入資金（元）</label><input type="number" id="pAdd" value="10000" step="1000"></div>
+
+    <details class="adv">
+      <summary>進階設定</summary>
+      <div>
+        <div class="f"><label>提領實質稅率（%）</label>
+          <div class="hint">股利、資本利得、補充保費的合計有效稅率。提領金額除以 (1−稅率) 還原成稅前</div>
+          <input type="number" id="pTax" value="0" step="0.5" min="0"></div>
+        <div class="f"><label>薪資稅負與勞健保（%）</label>
+          <div class="hint">只影響「所需年薪」的稅前換算。填 0 時該數字是稅後可支配</div>
+          <input type="number" id="pTaxW" value="0" step="1" min="0"></div>
+        <div class="f"><label>現金名目年報酬（%）</label>
+          <div class="hint">活存定存的名目利率。扣掉通膨後多半是負的實質報酬</div>
+          <input type="number" id="pRc" value="0" step="0.1"></div>
+        <div class="f"><label>模擬年期（年）</label><input type="number" id="pHor" value="50" step="5"></div>
+      </div>
+    </details>
+
+    <div id="mcBox">
+      <h2>隨機因素設定</h2>
+      <div class="f"><label>年化波動度（%）</label>
+        <div class="hint">全球分散股票約 15–18；單一集中部位 30＋；再乘上槓桿倍數</div>
+        <input type="number" id="pVol" value="15" step="1" min="0"></div>
+      <div class="f"><label>模擬路徑數</label>
+        <select id="pN"><option>500</option><option selected>2000</option><option>5000</option></select></div>
+    </div>
+  </div>
+
+  <!-- 中：指標與圖 -->
+  <div class="col col-c">
+    <div class="cards" id="cards"></div>
+
+    <div class="coast-card">
+      <div class="coast-head">
+        <div>
+          <div class="k">目前 COAST FIRE 達成率</div>
+          <div class="n" id="lblCoast">現階段門檻：--</div>
+        </div>
+        <div class="v" id="vCoast">--</div>
+      </div>
+      <div class="track"><div class="fill" id="barCoast" style="width:0%"></div></div>
+    </div>
+
+    <div class="chart-box">
+      <canvas id="cv"></canvas>
+      <div id="tip"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="note" id="flags"></div>
+
+    <div class="note" id="notes"></div>
+  </div>
+
+  <!-- 右：明細 -->
+  <div class="col col-r">
+    <h2>資產成長軌跡明細</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr id="th"></tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<footer>本工具在你的瀏覽器內計算，不上傳、不儲存、不記錄任何輸入值。關掉分頁即消失。</footer>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const IDS=["pBase","pInv","pCash","pDebt","pRd","pTerm","pMode","pTarget","pExp","pSwr",
+           "pRpre","pRpost","pInf","pAdd","pTax","pTaxW","pRc","pHor","pVol","pN"];
+const DEFAULTS={pBase:5,pInv:7000000,pCash:1000000,pDebt:3850000,pRd:3.3,pTerm:10,
+  pMode:"exp",pTarget:100000000,pExp:50000,pSwr:5,pRpre:10,pRpost:8,pInf:3,pAdd:10000,
+  pTax:0,pTaxW:0,pRc:0,pHor:50,pVol:15,pN:"2000"};
+let SEED=20260805;
+let MC=false;   // 隨機因素，預設關閉
+
+/* ---------- 格式 ---------- */
+function fmt(n){
+  if(!isFinite(n)) return "--";
+  const s=n<0?"−":"", a=Math.abs(n);
+  if(a>=1e8) return s+(a/1e8).toFixed(2)+" 億";
+  if(a>=1e4) return s+(a/1e4).toFixed(1)+" 萬";
+  return s+Math.round(a).toLocaleString("zh-TW");
+}
+function fmtFull(n){
+  const s=n<0?"−":"";
+  return s+"NT$"+Math.round(Math.abs(n)).toLocaleString("zh-TW");
+}
+function pct(x){return isFinite(x)?x.toFixed(1)+"%":"--";}
+
+/* ---------- 亂數 ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function makeNormal(seed){
+  const r=mulberry32(seed); let spare=null;
+  return function(){
+    if(spare!==null){const v=spare;spare=null;return v;}
+    let u=0,v=0; while(u===0)u=r(); while(v===0)v=r();
+    const m=Math.sqrt(-2*Math.log(u));
+    spare=m*Math.sin(2*Math.PI*v);
+    return m*Math.cos(2*Math.PI*v);
+  };
+}
+
+/* ---------- 負債：名目等額本息攤還表，再折現成實質 ---------- */
+function amort(D,rd,n,inf,H){
+  const balNom=new Float64Array(H+1), payNom=new Float64Array(H+1),
+        balReal=new Float64Array(H+1), payReal=new Float64Array(H+1);
+  let pay0=0;
+  if(D>0&&n>0) pay0 = Math.abs(rd)<1e-12 ? D/n : D*rd/(1-Math.pow(1+rd,-n));
+  let b=D;
+  balNom[0]=b; balReal[0]=b;
+  for(let y=0;y<H;y++){
+    const due=b*(1+rd);
+    const pm=Math.max(0,Math.min(pay0,due));   // 最後一期自動削平，不會多還
+    b=Math.max(0,due-pm);
+    const df=Math.pow(1+inf,y+1);
+    payNom[y]=pm; balNom[y+1]=b;
+    payReal[y]=pm/df; balReal[y+1]=b/df;
+  }
+  return {pay0,balNom,payNom,balReal,payReal};
+}
+
+/* ---------- 參數 ---------- */
+function cfg(){
+  const num=id=>{const v=parseFloat($(id).value);return isFinite(v)?v:0;};
+  // 所有報酬與利率一律以名目輸入，模型內部換算成實質：(1+名目)/(1+通膨)−1
+  const inf=Math.max(-0.5,num("pInf")/100);
+  const toReal=nom=>(1+nom)/(1+inf)-1;
+  const rdNom=num("pRd")/100;
+  const p={
+    inf,
+    inv:num("pInv"), cash:num("pCash"), debt:Math.max(0,num("pDebt")),
+    rdNom, rDebt:toReal(rdNom),
+    term:Math.max(0,Math.round(num("pTerm"))),
+    add:num("pAdd")*12,
+    swr:Math.max(.1,num("pSwr"))/100,
+    tax:Math.min(.9,Math.max(0,num("pTax")/100)),
+    taxW:Math.min(.9,Math.max(0,num("pTaxW")/100)),
+    rPreNom:num("pRpre")/100, rPostNom:num("pRpost")/100, rCashNom:num("pRc")/100,
+    vol:MC?Math.max(0,num("pVol"))/100:0,
+    base:Math.max(0,Math.round(num("pBase"))),
+    hor:Math.min(80,Math.max(5,Math.round(num("pHor")))),
+    n:MC?(parseInt($("pN").value,10)||2000):0,
+    mode:$("pMode").value
+  };
+  p.rPre=toReal(p.rPreNom); p.rPost=toReal(p.rPostNom); p.rCash=toReal(p.rCashNom);
+  if(p.mode==="tgt"){
+    p.target=Math.max(0,num("pTarget"));   // 直接指定淨資產目標
+    p.gross=p.target*p.swr;                // 反推稅前年提領
+    p.exp=p.gross*(1-p.tax);               // 反推稅後可支應年開銷
+  }else{
+    p.exp=num("pExp")*12;
+    p.gross=p.exp/(1-p.tax);               // 稅前年提領
+    p.target=p.gross/p.swr;                // FIRE 目標金額
+  }
+  p.sched=amort(p.debt,p.rdNom,p.term,p.inf,p.hor);
+  return p;
+}
+
+/* ---------- 引擎：單條路徑 ---------- */
+function path(p,rnd){
+  const S=p.sched, H=p.hor;
+  let inv=p.inv, cash=p.cash, extra=0;   // extra：資產見底後新增的負債，不在攤還表內
+  let fired=false, firedYear=-1;
+  const nw=new Float64Array(H+1), iv=new Float64Array(H+1),
+        cs=new Float64Array(H+1), db=new Float64Array(H+1);
+  for(let y=0;y<=H;y++){
+    const debt=S.balReal[y]+extra;
+    const w=inv+cash-debt;
+    if(!fired && w>=p.target){fired=true;firedYear=y;}
+    nw[y]=w; iv[y]=inv; cs[y]=cash; db[y]=debt;
+    if(y===H) break;
+
+    // 1) 提領或投入
+    if(fired){
+      let need=p.gross;
+      const fc=Math.min(Math.max(cash,0),need); cash-=fc; need-=fc;
+      inv-=need;
+    }else{
+      inv+=p.add;
+    }
+    // 2) 還本付息：攤還表的名目年繳額折現後的實質金額，先動現金再動投資
+    let rem=S.payReal[y];
+    const c2=Math.min(Math.max(cash,0),rem); cash-=c2; rem-=c2;
+    inv-=rem;
+    // 3) 成長
+    const base=fired?p.rPost:p.rPre;
+    const r=rnd?base+p.vol*rnd():base;
+    if(inv>0) inv*=(1+r);
+    if(cash>0) cash*=(1+p.rCash);
+    if(extra>0) extra*=(1+p.rDebt);
+    // 投資見底：缺口轉為負債
+    if(inv<0){extra+=-inv;inv=0;}
+    if(cash<0){extra+=-cash;cash=0;}
+  }
+  return {nw,iv,cs,db,firedYear};
+}
+
+/* ---------- Coast FIRE 所需年薪：解出達標所需的年投入 ---------- */
+function needSalary(p){
+  const S=p.sched, B=p.base;
+  const nw0=p.inv+p.cash-p.debt;
+  const pay1=S.payReal[0]||0;                       // 首年實質還款
+  const up=x=>p.taxW>0?x/(1-p.taxW):x;              // 稅前年薪換算
+
+  if(nw0>=p.target)
+    return {ok:true,state:"done",contrib:0,pay1,net:p.exp+pay1,gross:up(p.exp+pay1)};
+  if(B<=0)
+    return {ok:false,pay1,reason:"目標完全退休年限為 0 年而目前淨資產未達標，此數字無解。"};
+
+  // 以 A 為每年投入跑 B 年（不提領），回傳第 B 年淨資產。對 A 單調不減。
+  const sim=A=>{
+    let inv=p.inv, cash=p.cash, extra=0;
+    for(let y=0;y<B;y++){
+      inv+=A;
+      let rem=S.payReal[y]||0;
+      const c2=Math.min(Math.max(cash,0),rem); cash-=c2; rem-=c2;
+      inv-=rem;
+      if(inv>0) inv*=(1+p.rPre);
+      if(cash>0) cash*=(1+p.rCash);
+      if(extra>0) extra*=(1+p.rDebt);
+      if(inv<0){extra+=-inv;inv=0;}
+      if(cash<0){extra+=-cash;cash=0;}
+    }
+    return inv+cash-(S.balReal[B]||0)-extra;
+  };
+
+  let hi=Math.max(1e6,p.target), guard=0;
+  while(sim(hi)<p.target && guard<40){hi*=2;guard++;}
+  if(sim(hi)<p.target) return {ok:false,pay1,
+    reason:"在退休前實質報酬 "+pct(p.rPre*100)+" 之下，任何年投入金額都無法在 "+B+" 年內達標。"};
+
+  let lo=0;
+  for(let i=0;i<80;i++){const mid=(lo+hi)/2; if(sim(mid)>=p.target)hi=mid; else lo=mid;}
+  const A=hi, net=p.exp+pay1+A;
+  return {ok:true,state:A<1?"coasting":"need",contrib:A,pay1,net,gross:up(net)};
+}
+
+/* ---------- 引擎：整體 ---------- */
+function run(p,mc){
+  const useMC = (mc===undefined) ? MC : mc;
+  const det=path(p,null);
+  const H=p.hor;
+  const coast=new Float64Array(H+1);
+  const g=1+p.rPre;   // 實質成長因子；≤0 時折現無意義，門檻退化為目標本身
+  for(let y=0;y<=H;y++){
+    const yt=Math.max(0,p.base-y);
+    coast[y]= (yt>0&&g>0) ? p.target/Math.pow(g,yt) : p.target;
+  }
+  const out={det,coast,band:null,survRate:null,achRate:null,medFired:null,
+             sal:needSalary(p), nw0:p.inv+p.cash-p.debt};
+  if(!useMC) return out;
+
+  const N=Math.max(2,p.n||2000);
+  const rnd=makeNormal(SEED);
+  const cols=[]; for(let y=0;y<=H;y++) cols.push(new Float64Array(N));
+  let survive=0, achieve=0; const firedYears=[];
+  for(let i=0;i<N;i++){
+    const s=path(p,rnd);
+    for(let y=0;y<=H;y++) cols[y][i]=s.nw[y];
+    if(s.nw[H]>0) survive++;
+    if(s.firedYear>=0){achieve++;firedYears.push(s.firedYear);}
+  }
+  const P=[5,25,50,75,95], band={};
+  P.forEach(q=>band[q]=new Float64Array(H+1));
+  for(let y=0;y<=H;y++){
+    const a=Array.from(cols[y]).sort((x,z)=>x-z);
+    P.forEach(q=>{
+      const idx=(q/100)*(N-1), lo=Math.floor(idx), hi=Math.ceil(idx);
+      band[q][y]=a[lo]+(a[hi]-a[lo])*(idx-lo);
+    });
+  }
+  firedYears.sort((a,b)=>a-b);
+  out.band=band;
+  out.survRate=survive/N*100;
+  out.achRate=achieve/N*100;
+  out.medFired=firedYears.length?firedYears[Math.floor(firedYears.length/2)]:null;
+  return out;
+}
+
+/* ---------- 畫圖 ---------- */
+const cv=$("cv"), ctx=cv.getContext("2d");
+let VIEW=null;
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+function rgba(hex,a){
+  const h=hex.replace("#","").trim();
+  const n=h.length===3 ? h.split("").map(c=>c+c).join("") : h;
+  const r=parseInt(n.slice(0,2),16), g=parseInt(n.slice(2,4),16), b=parseInt(n.slice(4,6),16);
+  return "rgba("+r+","+g+","+b+","+a+")";
+}
+
+function draw(p,R){
+  const dpr=window.devicePixelRatio||1;
+  const w=cv.clientWidth, h=cv.clientHeight;
+  if(w<10||h<10) return;
+  cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+
+  const narrow = w<430;
+  const Rp=narrow?18:70, T=12, B=26;
+
+  const H=p.hor;
+  const MAIN = R.band ? R.band[50] : R.det.nw;
+  let lo=0, hi=Math.max(p.target*1.15, MAIN[H], R.det.nw[H], R.coast[H]);
+  for(let y=0;y<=H;y++){
+    lo=Math.min(lo, R.det.nw[y], MAIN[y], R.band?R.band[5][y]:MAIN[y]);
+    hi=Math.max(hi, R.det.nw[y], MAIN[y], R.band?R.band[95][y]:MAIN[y]);
+  }
+  if(hi<=lo) hi=lo+1;
+  const pad=(hi-lo)*0.06; hi+=pad; lo-=pad*0.5;
+
+  // y 軸刻度先算字串再量寬度，左側留白由實測決定，不用固定值 —— 固定值會把數字切掉
+  const ticks=6;
+  const tickFont=(narrow?10:11)+"px system-ui,-apple-system,'Segoe UI',sans-serif";
+  ctx.font=tickFont; ctx.textBaseline="middle";
+  const tickLbl=[];
+  for(let i=0;i<=ticks;i++) tickLbl.push(fmt(lo+(hi-lo)*i/ticks));
+  let maxLbl=0;
+  for(const s of tickLbl) maxLbl=Math.max(maxLbl, ctx.measureText(s).width);
+  const GAP=6;
+  const L=Math.min(Math.max(34, Math.ceil(maxLbl)+GAP+2), Math.max(34, w*0.42));
+
+  const pw=w-L-Rp, ph=h-T-B;
+  if(pw<40||ph<40) return;
+
+  const X=y=>L+pw*(y/H);
+  const Y=v=>T+ph*(1-(v-lo)/(hi-lo));
+  VIEW={L,Rp,T,B,pw,ph,X,Y,H,lo,hi};
+
+  // 網格 + y 軸
+  for(let i=0;i<=ticks;i++){
+    const v=lo+(hi-lo)*i/ticks, yy=Y(v);
+    ctx.strokeStyle=css("--grid"); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(L,Math.round(yy)+.5); ctx.lineTo(L+pw,Math.round(yy)+.5); ctx.stroke();
+    ctx.fillStyle=css("--muted"); ctx.textAlign="right";
+    ctx.fillText(tickLbl[i],L-GAP,yy);
+  }
+  ctx.font="11px system-ui,-apple-system,'Segoe UI',sans-serif";
+  // 零線
+  if(lo<0&&hi>0){
+    ctx.strokeStyle=css("--axis"); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(L,Math.round(Y(0))+.5); ctx.lineTo(L+pw,Math.round(Y(0))+.5); ctx.stroke();
+  }
+  // x 軸
+  ctx.textAlign="center"; ctx.fillStyle=css("--muted");
+  const step=H<=20?5:(H<=45?10:(narrow?20:15));
+  for(let y=0;y<=H;y+=step) ctx.fillText("第 "+y+" 年",X(y),h-B/2+2);
+
+  const line=(arr,color,dash,width)=>{
+    ctx.save(); ctx.setLineDash(dash||[]);
+    ctx.strokeStyle=color; ctx.lineWidth=width||2;
+    ctx.lineJoin="round"; ctx.lineCap="round";
+    ctx.beginPath();
+    for(let y=0;y<=H;y++){const xx=X(y),yy=Y(arr[y]); y?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy);}
+    ctx.stroke(); ctx.restore();
+  };
+
+  if(R.band){
+    // 隨機因素開啟：扇形帶
+    const band=(a,b,color)=>{
+      ctx.fillStyle=color; ctx.beginPath();
+      ctx.moveTo(X(0),Y(a[0]));
+      for(let y=1;y<=H;y++) ctx.lineTo(X(y),Y(a[y]));
+      for(let y=H;y>=0;y--) ctx.lineTo(X(y),Y(b[y]));
+      ctx.closePath(); ctx.fill();
+    };
+    band(R.band[95],R.band[5],css("--s1-band2"));
+    band(R.band[75],R.band[25],css("--s1-band"));
+  }else{
+    // 隨機因素關閉：單一路徑 + 面積填色
+    const baseY=(lo<0&&hi>0)?Y(0):T+ph;
+    const g=ctx.createLinearGradient(0,T,0,T+ph);
+    g.addColorStop(0,rgba(css("--s1"),.30));
+    g.addColorStop(1,rgba(css("--s1"),.02));
+    ctx.fillStyle=g; ctx.beginPath();
+    ctx.moveTo(X(0),baseY);
+    for(let y=0;y<=H;y++) ctx.lineTo(X(y),Y(MAIN[y]));
+    ctx.lineTo(X(H),baseY); ctx.closePath(); ctx.fill();
+  }
+
+  // FIRE 目標（參考線，中性墨色）
+  ctx.save(); ctx.setLineDash([6,4]); ctx.strokeStyle=css("--muted"); ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(L,Y(p.target)); ctx.lineTo(L+pw,Y(p.target)); ctx.stroke(); ctx.restore();
+
+  line(R.coast,css("--s3"),[],2);
+  if(R.band) line(R.det.nw,css("--s2"),[],2);
+  line(MAIN,css("--s1"),[],2.5);
+
+  // 直接標籤（右端），依 y 位置排開避免重疊
+  if(!narrow){
+    const labs=[
+      {t:R.band?"中位數":"淨資產",v:MAIN[H],c:css("--s1-ink")},
+      {t:"Coast 門檻",v:R.coast[H],c:css("--s3-ink")},
+      {t:"FIRE 目標",v:p.target,c:css("--muted")}
+    ];
+    if(R.band) labs.push({t:"零波動",v:R.det.nw[H],c:css("--s2-ink")});
+    labs.sort((a,b)=>a.v-b.v);
+    let prev=-Infinity;
+    for(let i=labs.length-1;i>=0;i--){
+      let yy=Y(labs[i].v);
+      if(yy<T+9) yy=T+9;
+      if(yy<prev+14) yy=prev+14;
+      if(yy>T+ph) yy=T+ph;
+      prev=yy;
+      ctx.font="600 11px system-ui,-apple-system,'Segoe UI',sans-serif";
+      ctx.textAlign="left"; ctx.fillStyle=labs[i].c;
+      ctx.fillText(labs[i].t,L+pw+7,yy);
+    }
+  }
+}
+
+/* ---------- 十字線與 tooltip ---------- */
+let LAST=null;
+function moveTip(clientX,clientY){
+  if(!VIEW||!LAST) return;
+  const r=cv.getBoundingClientRect(), mx=clientX-r.left;
+  const {L,pw,H,X,Y,T,ph}=VIEW;
+  if(mx<L-4||mx>L+pw+4){$("tip").style.opacity=0;redraw();return;}
+  const y=Math.max(0,Math.min(H,Math.round((mx-L)/pw*H)));
+  redraw();
+  ctx.save(); ctx.setLineDash([3,3]); ctx.strokeStyle=css("--axis"); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(X(y),T); ctx.lineTo(X(y),T+ph); ctx.stroke(); ctx.restore();
+  const B=LAST.R.band, d=LAST.R.det;
+  const MAIN=B?B[50]:d.nw;
+  const dots=[[MAIN[y],css("--s1")],[LAST.R.coast[y],css("--s3")]];
+  if(B) dots.push([d.nw[y],css("--s2")]);
+  dots.forEach(([v,c])=>{
+    ctx.beginPath(); ctx.arc(X(y),Y(v),4.5,0,6.284);
+    ctx.fillStyle=c; ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle=css("--panel"); ctx.stroke();
+  });
+  const tip=$("tip");
+  let html="<b>第 "+y+" 年</b>"+row(B?"中位數":"淨資產",MAIN[y],css("--s1"));
+  if(B){
+    html+=row("25–75",null,null,fmt(B[25][y])+" ～ "+fmt(B[75][y]))+
+          row("5–95",null,null,fmt(B[5][y])+" ～ "+fmt(B[95][y]))+
+          row("零波動",d.nw[y],css("--s2"));
+  }
+  html+=row("Coast 門檻",LAST.R.coast[y],css("--s3"));
+  if(LAST.p.debt>0||d.db[y]>0) html+=row("負債",d.db[y],null);
+  tip.innerHTML=html;
+  const box=cv.parentElement.getBoundingClientRect();
+  let tx=clientX-box.left+14;
+  if(tx+195>box.width) tx=Math.max(4,clientX-box.left-195);
+  tip.style.left=tx+"px";
+  tip.style.top=Math.max(4,clientY-box.top-40)+"px";
+  tip.style.opacity=1;
+}
+function row(k,v,c,txt){
+  return "<div class='r'><span>"+(c?"<i style='background:"+c+"'></i>":"")+k+
+    "</span><span>"+(txt!==undefined?txt:fmt(v))+"</span></div>";
+}
+cv.addEventListener("mousemove",e=>moveTip(e.clientX,e.clientY));
+cv.addEventListener("mouseleave",()=>{$("tip").style.opacity=0;redraw();});
+cv.addEventListener("touchmove",e=>{
+  if(!e.touches.length) return;
+  moveTip(e.touches[0].clientX,e.touches[0].clientY);
+},{passive:true});
+cv.addEventListener("touchend",()=>{$("tip").style.opacity=0;redraw();});
+function redraw(){if(LAST)draw(LAST.p,LAST.R);}
+
+/* ---------- 輸出 ---------- */
+function render(){
+  const p=cfg(), R=run(p);
+  LAST={p,R};
+
+  const nw0=R.nw0, coast0=R.coast[0];
+  const cp=coast0>0?nw0/coast0*100:0;
+
+  // 表格與狀態欄描述的是「表格正在顯示的那條線」：關閉隨機因素時是零波動路徑，
+  // 開啟時是中位數線。用 R.det.firedYear 會讓中位數只有 81% 的那一列標成「FIRE 退休」。
+  const MAIN=R.band?R.band[50]:R.det.nw;
+  let mFired=-1;
+  for(let y=0;y<=p.hor;y++) if(MAIN[y]>=p.target){mFired=y;break;}
+
+  // 卡片
+  const S=R.sal;
+  const salV = !S.ok ? "無解"
+             : S.state==="done" ? "已達標"
+             : fmt(S.gross);
+  const salTax = p.taxW>0
+    ? "，已用薪資稅負 "+pct(p.taxW*100)+" 還原為稅前（稅後 "+fmt(S.net)+"）。"
+    : "，為稅後可支配金額（薪資稅負設 0，未還原稅前）。";
+  let salN;
+  if(!S.ok) salN=S.reason;
+  else if(S.state==="done") salN="目前淨資產已達 FIRE 目標，不需要再靠薪資累積。";
+  else if(S.state==="coasting") salN="已越過 Coast 門檻，年投入 0 也能在 "+p.base+
+    " 年後達標，此數字僅涵蓋開銷 "+fmt(p.exp)+" 與首年還款 "+fmt(S.pay1)+salTax;
+  else salN="年開銷 "+fmt(p.exp)+" ＋首年還款 "+fmt(S.pay1)+" ＋年投入 "+fmt(S.contrib)+salTax;
+
+  const cards=[
+    ["FIRE 終極目標","",fmt(p.target),
+      fmtFull(p.target)+"；年提領 "+fmtFull(p.gross)+"（稅前）／月開銷 "+fmt(p.exp/12)+"（稅後）"],
+    ["目前淨資產","",fmt(nw0),
+      "投資 "+fmt(p.inv)+" ＋現金 "+fmt(p.cash)+" −負債 "+fmt(p.debt)],
+    ["Coast FIRE 所需年薪","coast",salV,
+      "在 "+p.base+" 年內把淨資產推到 FIRE 目標所需的年收入。"+salN]
+  ];
+  if(MC){
+    cards.push(["預估達成完全退休","blue",R.medFired!==null?"第 "+R.medFired+" 年":"未達成",
+      R.medFired!==null
+        ?"首次觸及目標年份的中位數；"+pct(R.achRate)+" 的路徑曾觸及，觸及後仍可能跌破"
+        :"模擬 "+p.hor+" 年內未達標"]);
+    cards.push(["第 "+p.hor+" 年存活率","",pct(R.survRate),"淨資產仍為正的路徑比例"]);
+  }else{
+    cards.push(["預估達成完全退休","blue",R.det.firedYear>=0?"第 "+R.det.firedYear+" 年":"未達成",
+      R.det.firedYear>=0?"零波動單一路徑":"模擬 "+p.hor+" 年內未達標"]);
+  }
+  $("cards").innerHTML=cards.map(([k,c,v,n])=>
+    "<div class='card "+c+"'><div class='k'>"+k+"</div><div class='v'>"+v+
+    "</div><div class='n'>"+n+"</div></div>").join("");
+
+  $("vCoast").textContent=nw0<0?"--":pct(cp);
+  $("lblCoast").textContent="現階段門檻："+fmtFull(coast0)+"（"+p.base+" 年後完全退休的折現值）";
+  $("barCoast").style.width=Math.max(0,Math.min(isFinite(cp)?cp:0,100))+"%";
+
+  // 圖例
+  const lg=[];
+  if(MC){
+    lg.push("<span><span class='sw' style='background:var(--s1-band2)'></span>5–95 百分位</span>");
+    lg.push("<span><span class='sw' style='background:var(--s1-band)'></span>25–75 百分位</span>");
+    lg.push("<span><i style='background:var(--s1)'></i>淨資產中位數</span>");
+    lg.push("<span><i style='background:var(--s2)'></i>零波動基準</span>");
+  }else{
+    lg.push("<span><i style='background:var(--s1)'></i>淨資產（零波動）</span>");
+  }
+  lg.push("<span><i style='background:var(--s3)'></i>Coast 門檻</span>");
+  lg.push("<span style='color:var(--muted-t)'><i class='dash'></i>FIRE 目標</span>");
+  $("legend").innerHTML=lg.join("");
+
+  // 警示
+  const F=[];
+  if(!MC) F.push(["info","隨機因素已關閉。圖表是單一零波動路徑，每年報酬固定為設定值，"+
+    "沒有計入報酬序列風險。實際市場不會每年給你同一個報酬 —— 需要看失敗機率時請開啟隨機因素。"]);
+  if(p.swr>p.rPost) F.push(["warn","提領率 "+pct(p.swr*100)+" 高於退休後<b>實質</b>報酬 "+
+    pct(p.rPost*100)+"（名目 "+pct(p.rPostNom*100)+" 扣掉通膨 "+pct(p.inf*100)+
+    "）。本金在無波動情境下必然遞減 —— 這不是保守假設，是自動失敗設定。"]);
+  else if(Math.abs(p.swr-p.rPost)<1e-9) F.push(["warn","提領率與退休後<b>實質</b>報酬同為 "+
+    pct(p.swr*100)+"，剛好打平。無波動路徑不會遞減，但安全邊際是零 —— "+
+    "任何一年的負報酬都沒有後續成長可以補回。"]);
+  if(MC){
+    if(mFired<0) F.push(["warn","中位數<b>水位</b>在 "+p.hor+" 年內從未站上 FIRE 目標 "+
+      fmt(p.target)+"，表格「狀態」欄因此整欄空白 —— 這是模擬結論，不是顯示錯誤。"+
+      (R.medFired!==null
+        ? "卡片的「第 "+R.medFired+" 年」是<b>首次觸及</b>目標的年份中位數，"+pct(R.achRate)+
+          " 的路徑曾觸及。兩者不衝突：提領率高於退休後實質報酬，觸及後提領會把本金拉回目標以下，"+
+          "所以「曾經摸到」的比例遠高於「持續站穩」。"
+        : "")]);
+    else if(R.medFired!==null&&mFired!==R.medFired)
+      F.push(["info","中位數水位第 "+mFired+" 年站上目標，首次觸及年份的中位數是第 "+R.medFired+
+        " 年。表格「狀態」欄依中位數水位判定，卡片顯示的是首次觸及年份。"]);
+    if(R.survRate<80) F.push(["","第 "+p.hor+" 年存活率 "+pct(R.survRate)+
+      "，低於 80%。以序列風險而言這已經不算安全，且常態分配低估了左尾。"]);
+    else if(R.survRate>=95) F.push(["ok","第 "+p.hor+" 年存活率 "+pct(R.survRate)+
+      "，通過 95% 門檻。前提是波動度 "+pct(p.vol*100)+" 沒有低估。"]);
+    if(p.vol===0) F.push(["warn","波動度設為 0，蒙地卡羅與零波動路徑重合。存活率此時沒有資訊量。"]);
+  }
+  if(p.debt>0&&p.term===0) F.push(["warn","負債償還年限設為 0，代表完全不還款。餘額會以名目利率 "+
+    pct(p.rdNom*100)+" 持續滾大，圖表上的負債線只會往上。"]);
+  else if(p.debt>0) F.push(["info","負債 "+fmt(p.debt)+"／"+pct(p.rdNom*100)+"／"+p.term+
+    " 年等額本息：每年應繳 "+fmtFull(p.sched.pay0)+"（名目），"+
+    "第 "+p.base+" 年底名目餘額 "+fmt(p.sched.balNom[Math.min(p.base,p.hor)])+
+    "、折現後實質 "+fmt(p.sched.balReal[Math.min(p.base,p.hor)])+"。"]);
+  if(p.tax===0) F.push(["warn","提領稅率設為 0。台灣的股利與資本利得並非全額免稅，補充保費也未計入，"+
+    "實際可用金額會低於此處的稅後開銷。"]);
+  if(R.sal.ok&&R.sal.state!=="done"&&p.taxW===0)
+    F.push(["warn","「Coast FIRE 所需年薪」目前是<b>稅後可支配</b>金額。綜所稅級距與勞健保未建模，"+
+      "要看稅前年薪請到進階設定填「薪資稅負與勞健保」。此數字也假設你的生活開銷等於上面的月開銷設定。"]);
+  if(nw0<0) F.push(["","目前淨資產為負，負債大於資產。Coast 達成率在此情境下沒有意義。"]);
+  $("flags").innerHTML=F.length
+    ? F.map(([c,t])=>"<div class='flag "+c+"'>"+t+"</div>").join("")
+    : "<p>目前參數沒有觸發任何警示。</p>";
+
+  // 說明
+  let np="<p><b>名目與實質</b>　報酬與利率一律填<b>名目</b>，模型內部一次換算成實質："+
+    "(1+名目)÷(1+通膨)−1。目前通膨 "+pct(p.inf*100)+"，換算後退休前 "+pct(p.rPre*100)+
+    "、退休後 "+pct(p.rPost*100)+"、現金 "+pct(p.rCash*100)+"、負債 "+pct(p.rDebt*100)+"。"+
+    "圖表與表格全部以今日幣值呈現，所以開銷與投入維持定值。</p>"+
+    "<p><b>模型怎麼算的</b>　每年一步，順序固定為：提領或投入 → 還本付息 → 資產成長。"+
+    "投資以實質報酬複利，現金以實質現金報酬複利，兩者互不共用成長率。"+
+    "退休後提領先動現金再動投資；投資見底時缺口轉為新負債並以實質負債利率繼續計息。</p>"+
+    "<p><b>負債怎麼算的</b>　用名目等額本息攤還：年繳額 = 本金 × 利率 ÷ (1−(1+利率)^−年限)，"+
+    "償還年限填 0 表示不還款、餘額以利率滾。攤還表在名目世界跑完，再逐年折現成實質金額餵進上面的引擎，"+
+    "所以圖表上的負債線會因為通膨侵蝕而降得比帳面快。</p>"+
+    "<p><b>Coast FIRE 所需年薪怎麼算的</b>　數值解：找出一個年投入金額，使得"+
+    "「目前資產 → 每年投入 → 扣掉當年還款 → 以退休前實質報酬成長」的零波動路徑，"+
+    "在第 "+p.base+" 年剛好觸到 FIRE 目標。所需年薪 = 年開銷 ＋ 首年實質還款 ＋ 該年投入金額。"+
+    "假設生活開銷等於上面設定的月開銷，且薪資本身不隨年資成長。</p>";
+  if(MC) np+="<p><b>隨機因素怎麼算的</b>　每條路徑每年抽一次常態分配報酬，平均數為設定的報酬率、"+
+    "標準差為波動度，現金與負債不抽（視為確定）。亂數用固定種子，同參數重跑結果一致；"+
+    "按「重抽亂數」換一組種子。存活率＝期末淨資產大於零的路徑比例。"+
+    "常態分配的左尾比實際市場薄，因此存活率是<b>樂觀的上界</b>而非中性估計。</p>";
+  np+="<p><b>這個模型沒有處理的</b>　報酬序列相關性與肥尾、通膨本身的波動（通膨視為固定值）、"+
+    "薪資成長、綜所稅累進級距與勞健保、勞退勞保、房產、單一部位流動性、追繳保證金。</p>"+
+    "<p><b>這是試算，不是對帳單。</b>所有輸出都由你輸入的假設推導而來，"+
+    "沒有任何一項是實際帳戶餘額或已實現報酬。假設錯了，結論就錯了。</p>";
+  $("notes").innerHTML=np;
+
+  // 表格
+  const showDebt=p.debt>0;
+  const cols=["經過年數",MC?"淨資產 中位":"淨資產"];
+  if(showDebt) cols.push("負債");
+  cols.push("Coast 門檻","達成率","狀態");
+  $("th").innerHTML=cols.map(k=>"<th>"+k+"</th>").join("");
+
+  let html="";
+  for(let y=0;y<=p.hor;y++){
+    const med=MAIN[y], det=R.det.nw[y], c=R.coast[y];
+    const rate=(c>0&&med>0)?med/c*100:NaN;
+    let cls="", tag="";
+    // 退休狀態是黏著的：一旦達標就進入提領模式，之後跌破目標仍是退休中，不能只比當年數值
+    const fired=mFired>=0&&y>=mFired;
+    if(fired){cls="fire";tag="<span class='tag' style='color:var(--s1-ink)'>FIRE 退休</span>";}
+    else if(rate>=100){cls="coast";tag="<span class='tag' style='color:var(--s3-ink)'>Coast 達標</span>";}
+    if(y===0)cls="now";
+    let tds="<td>"+y+"</td><td class='nw'>"+fmt(med)+"</td>";
+    if(showDebt) tds+="<td>"+fmt(R.det.db[y])+"</td>";
+    tds+="<td>"+fmt(c)+"</td><td>"+pct(rate)+"</td><td>"+tag+"</td>";
+    html+="<tr class='"+cls+"'>"+tds+"</tr>";
+  }
+  $("tb").innerHTML=html;
+
+  draw(p,R);
+}
+
+/* ---------- 模式切換 ---------- */
+function syncMode(){
+  const t=$("pMode").value==="tgt";
+  $("fTgt").hidden=!t;
+  $("fExp").hidden=t;
+}
+function syncMC(){
+  $("bRand").setAttribute("aria-pressed",MC?"true":"false");
+  $("mcBox").classList.toggle("on",MC);
+  $("bSeed").hidden=!MC;
+}
+
+/* ---------- 事件 ---------- */
+let timer=null;
+const go=()=>{clearTimeout(timer);timer=setTimeout(render,110);};
+IDS.forEach(id=>{
+  const el=$(id);
+  el.addEventListener("input",go);
+  el.addEventListener("change",go);
+});
+$("pMode").addEventListener("change",()=>{syncMode();render();});
+$("bRand").addEventListener("click",()=>{MC=!MC;syncMC();render();});
+$("bSeed").addEventListener("click",()=>{SEED=(SEED*1103515245+12345)>>>0;render();});
+$("bReset").addEventListener("click",()=>{
+  for(const k in DEFAULTS) $(k).value=DEFAULTS[k];
+  SEED=20260805; MC=false; syncMC(); syncMode(); render();
+});
+$("bTheme").addEventListener("click",()=>{
+  const d=document.documentElement.getAttribute("data-theme")==="dark";
+  document.documentElement.setAttribute("data-theme",d?"light":"dark");
+  $("bTheme").textContent=d?"深色":"淺色";
+  render();
+});
+let rt=null;
+window.addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{if(LAST)draw(LAST.p,LAST.R);},120);});
+syncMode(); syncMC(); render();
+</script>
+</body>
+</html>
